@@ -256,7 +256,40 @@
       font-weight: bold;
       text-align: center;
     }
-
+    .rating-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid #eee;
+      font-size: 14px;
+    }
+    .rating-item:last-child {
+      border-bottom: none;
+    }
+    .rating-item .item-title {
+      color: #333;
+      flex: 1;
+    }
+    .rating-item .item-type {
+      color: #999;
+      font-size: 12px;
+      margin: 0 10px;
+      text-transform: capitalize;
+    }
+    .rating-item .item-score {
+      font-weight: bold;
+      color: #4a90e2;
+      min-width: 45px;
+      text-align: right;
+    }
+    .ratings-summary {
+      font-size: 13px;
+      color: #666;
+      margin-bottom: 15px;
+      padding-bottom: 10px;
+      border-bottom: 2px solid #eee;
+    }
     /* Rating UI hidden by default until signed in */
     .rating-ui {
       display: none;
@@ -328,6 +361,7 @@
     <div class="tabs">
       <button class="tab-btn active" id="movieTabBtn">Rate a Movie</button>
       <button class="tab-btn" id="bookTabBtn">Rate a Book</button>
+      <button class="tab-btn" id="ratingsTabBtn">My Ratings</button>
     </div>
 
     <!-- Movie tab -->
@@ -347,6 +381,13 @@
         <input type="text" id="bookInput"
                placeholder="Start typing a book title...">
         <div class="autocomplete-list" id="bookList"></div>
+      </div>
+    </div>
+
+    <!-- My Ratings tab -->
+    <div class="tab-panel" id="ratingsPanel">
+      <div id="ratingsList" style="margin-top:10px;">
+        <p style="color:#666; font-size:14px;">Loading your ratings...</p>
       </div>
     </div>
 
@@ -689,6 +730,98 @@
         }
       });
 
+      // --- LOAD USER RATINGS ---
+    async function loadUserRatings() {
+      const ratingsList = document.getElementById("ratingsList");
+      ratingsList.innerHTML = 
+        `<p style="color:#666; font-size:14px;">Loading your ratings...</p>`;
+
+      if (!currentUser) {
+        ratingsList.innerHTML = 
+          `<p style="color:#666; font-size:14px;">
+            Please sign in to view your ratings.
+          </p>`;
+        return;
+      }
+
+      try {
+        const ratingsRef = collection(db, "ratings");
+        const q = query(
+          ratingsRef,
+          where("userId", "==", currentUser.uid)
+        );
+        const snapshot = await getDocs(q);
+
+        if (snapshot.empty) {
+          ratingsList.innerHTML = 
+            `<p style="color:#666; font-size:14px;">
+              You have not rated anything yet. 
+              Start by rating a movie or book!
+            </p>`;
+          return;
+        }
+
+        // Separate movies and books
+        const movies = [];
+        const books = [];
+        snapshot.forEach((doc) => {
+          const data = doc.data();
+          if (data.type === "movie") movies.push(data);
+          else books.push(data);
+        });
+
+        // Sort each by rating descending
+        movies.sort((a, b) => b.rating - a.rating);
+        books.sort((a, b) => b.rating - a.rating);
+
+        const total = snapshot.size;
+        let html = `
+          <div class="ratings-summary">
+            ${total} total ratings &nbsp;|&nbsp; 
+            ${movies.length} movies &nbsp;|&nbsp; 
+            ${books.length} books
+          </div>
+        `;
+
+        if (movies.length > 0) {
+          html += `<p style="font-weight:bold; margin-bottom:8px;">
+            Movies</p>`;
+          movies.forEach(item => {
+            html += `
+              <div class="rating-item">
+                <span class="item-title">${item.title} 
+                  ${item.year ? `(${item.year})` : ""}
+                </span>
+                <span class="item-score">${item.rating}/10</span>
+              </div>`;
+          });
+        }
+
+        if (books.length > 0) {
+          html += `<p style="font-weight:bold; 
+            margin-top:15px; margin-bottom:8px;">Books</p>`;
+          books.forEach(item => {
+            html += `
+              <div class="rating-item">
+                <span class="item-title">${item.title}
+                  ${item.author ? `by ${item.author}` : ""}
+                </span>
+                <span class="item-score">${item.rating}/10</span>
+              </div>`;
+          });
+        }
+
+        ratingsList.innerHTML = html;
+
+      } catch (err) {
+        ratingsList.innerHTML = 
+          `<p style="color:red; font-size:14px;">
+            Error loading ratings. Please try again.
+          </p>`;
+        console.error(err);
+      }
+    }
+
     // --- FRIENDLY ERROR MESSAGES ---
     function friendlyError(code) {
       // Normalize code to handle both formats Firebase returns
@@ -727,20 +860,48 @@
       .addEventListener("click", () => {
         document.getElementById("movieTabBtn").classList.add("active");
         document.getElementById("bookTabBtn").classList.remove("active");
+        document.getElementById("ratingsTabBtn").classList.remove("active");
         document.getElementById("moviePanel").classList.add("active");
         document.getElementById("bookPanel").classList.remove("active");
+        document.getElementById("ratingsPanel").classList.remove("active");
         document.getElementById("bookInput").value = "";
         selectedBook = null;
+        document.getElementById("ratingUI")
+          .querySelector(".rating-container").style.display = "block";
+        document.getElementById("submitBtn").style.display = "block";
       });
 
     document.getElementById("bookTabBtn")
       .addEventListener("click", () => {
         document.getElementById("bookTabBtn").classList.add("active");
         document.getElementById("movieTabBtn").classList.remove("active");
+        document.getElementById("ratingsTabBtn").classList.remove("active");
         document.getElementById("bookPanel").classList.add("active");
         document.getElementById("moviePanel").classList.remove("active");
+        document.getElementById("ratingsPanel").classList.remove("active");
         document.getElementById("movieInput").value = "";
         selectedMovie = null;
+        document.getElementById("ratingUI")
+          .querySelector(".rating-container").style.display = "block";
+        document.getElementById("submitBtn").style.display = "block";
+      });
+
+      document.getElementById("ratingsTabBtn")
+      .addEventListener("click", () => {
+        document.getElementById("ratingsTabBtn").classList.add("active");
+        document.getElementById("movieTabBtn").classList.remove("active");
+        document.getElementById("bookTabBtn").classList.remove("active");
+        document.getElementById("ratingsPanel").classList.add("active");
+        document.getElementById("moviePanel").classList.remove("active");
+        document.getElementById("bookPanel").classList.remove("active");
+        document.getElementById("movieInput").value = "";
+        document.getElementById("bookInput").value = "";
+        selectedMovie = null;
+        selectedBook = null;
+        loadUserRatings();
+        document.getElementById("ratingUI")
+          .querySelector(".rating-container").style.display = "none";
+        document.getElementById("submitBtn").style.display = "none";
       });
 
     // --- MOVIE AUTOCOMPLETE ---
