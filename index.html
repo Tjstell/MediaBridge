@@ -954,49 +954,68 @@
     const bookList = document.getElementById("bookList");
     let bookRequestId = 0;
     let bookSelected = false;
+    let bookDebounceTimer = null;
 
-    bookInput.addEventListener("input", async () => {
+    bookInput.addEventListener("input", () => {
       const query = bookInput.value.trim();
       bookList.innerHTML = "";
       selectedBook = null;
       bookSelected = false;
+
       if (query.length < 2) return;
 
-      const thisRequestId = ++bookRequestId;
+      // Clear any pending request
+      clearTimeout(bookDebounceTimer);
 
-      const res = await fetch(
-        `https://www.googleapis.com/books/v1/volumes?q=intitle:${encodeURIComponent(query)}&maxResults=6&key=${CONFIG.BOOKS_KEY}`
-      );
-      const data = await res.json();
+      // Wait 300ms after typing stops before firing
+      bookDebounceTimer = setTimeout(async () => {
+        const thisRequestId = ++bookRequestId;
 
-      if (thisRequestId !== bookRequestId || bookSelected) return;
+        const res = await fetch(
+          `https://www.googleapis.com/books/v1/volumes?q=intitle:${encodeURIComponent(query)}&maxResults=6&key=${CONFIG.BOOKS_KEY}`
+        );
+        const data = await res.json();
 
-      // Guard against empty results
-      if (!data.items || data.items.length === 0) return;
+        if (thisRequestId !== bookRequestId || bookSelected) return;
+        if (!data.items || data.items.length === 0) return;
 
-      data.items.forEach(item => {
-        const info = item.volumeInfo;
-        const title = info.title || "Unknown Title";
-        const author = info.authors
-          ? info.authors[0] : "Unknown Author";
-        const year = info.publishedDate
-          ? info.publishedDate.substring(0, 4) : "N/A";
-        const div = document.createElement("div");
-        div.textContent = `${title} by ${author} (${year})`;
-        div.addEventListener("click", () => {
-          bookSelected = true;
-          bookInput.value = `${title} by ${author}`;
-          selectedBook = {
-            id: item.id,
-            title: title,
-            author: author,
-            year: year,
-            type: "book"
-          };
-          bookList.innerHTML = "";
+        const seen = new Set();
+
+        data.items.forEach(item => {
+          const info = item.volumeInfo;
+          const title = info.title || "Unknown Title";
+          const author = info.authors
+            ? info.authors[0] : "Unknown Author";
+          const year = info.publishedDate
+            ? info.publishedDate.substring(0, 4) : "N/A";
+
+          const normalizedId = `${title}-${author}`
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-|-$/g, "");
+
+          const dedupKey = 
+            `${title.toLowerCase()}|${author.toLowerCase()}`;
+          if (seen.has(dedupKey)) return;
+          seen.add(dedupKey);
+
+          const div = document.createElement("div");
+          div.textContent = `${title} by ${author} (${year})`;
+          div.addEventListener("click", () => {
+            bookSelected = true;
+            bookInput.value = `${title} by ${author}`;
+            selectedBook = {
+              id: normalizedId,
+              title: title,
+              author: author,
+              year: year,
+              type: "book"
+            };
+            bookList.innerHTML = "";
+          });
+          bookList.appendChild(div);
         });
-        bookList.appendChild(div);
-      });
+      }, 300);
     });
 
     // --- SUBMIT RATING ---
