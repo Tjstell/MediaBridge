@@ -241,6 +241,16 @@
     button.submit-btn:hover {
       background: #357abd;
     }
+    .banner-dismiss {
+      float: right;
+      cursor: pointer;
+      color: #999;
+      font-size: 16px;
+      background: none;
+      border: none;
+      padding: 0;
+      margin-left: 10px;
+    }
     #status {
       margin-top: 15px;
       font-weight: bold;
@@ -279,6 +289,17 @@
     versa. Thank you so much for helping me build this. A few extra
     ratings from you personally makes a huge difference, and I
     genuinely appreciate every single one.
+  </div>
+
+ <!-- Anonymous session banner -->
+  <div id="anonBanner" style="display:none; background:#fff3cd; 
+       border-left:4px solid #ffc107; border-radius:6px;
+       padding:12px 15px; margin-bottom:15px; 
+       font-size:14px; color:#555; line-height:1.6;">
+    <strong>Welcome back!</strong> You have ratings from a previous 
+    session. Create an account or sign in to save them before 
+    continuing. If you skip this your previous ratings will still 
+    count toward the model, but will not be attached to your account.
   </div>
 
   <!-- Sign in prompt shown when logged out -->
@@ -395,10 +416,16 @@
       </button>
 
       <p style="font-size:12px; color:#999; text-align:center;">
-        Already have an account?
         <span id="toggleAuthMode"
               style="cursor:pointer; color:#4a90e2;">
-          Sign in instead
+          Already have an account? Sign in instead
+        </span>
+      </p>
+      <p id="forgotPasswordLink" style="font-size:12px; 
+         color:#999; text-align:center; display:none;">
+        <span id="forgotPassword"
+              style="cursor:pointer; color:#4a90e2;">
+          Forgot your password?
         </span>
       </p>
     </div>
@@ -407,11 +434,13 @@
   <script type="module">
     import { initializeApp }
       from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-    import { getFirestore, collection, addDoc }
+    import { getFirestore, collection, addDoc, query,
+             where, getDocs, writeBatch, doc }
       from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
     import { getAuth, GoogleAuthProvider, signInWithPopup,
              createUserWithEmailAndPassword,
              signInWithEmailAndPassword,
+             sendPasswordResetEmail,
              onAuthStateChanged }
       from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
@@ -425,14 +454,18 @@
     let currentUser = null;
     let isSignUp = true;
 
-    // --- AUTH STATE LISTENER ---
+   // Track anonymous UID for merging later
+    let anonymousUid = null;
+
     onAuthStateChanged(auth, (user) => {
       const authStatus = document.getElementById("authStatus");
       const authButtons = document.getElementById("authButtons");
       const signinPrompt = document.getElementById("signinPrompt");
       const ratingUI = document.getElementById("ratingUI");
+      const anonBanner = document.getElementById("anonBanner");
 
-      if (user) {
+      if (user && !user.isAnonymous) {
+        // Real signed in user
         currentUser = user;
         const name = user.displayName || user.email || "User";
         authStatus.textContent = `Signed in as ${name}`;
@@ -441,22 +474,22 @@
         document.getElementById("signOutBtn")
           .addEventListener("click", () => auth.signOut());
 
-        // Show rating UI, hide sign in prompt
         signinPrompt.style.display = "none";
+        anonBanner.style.display = "none";
         ratingUI.style.display = "block";
 
-        // Close modal if open
         document.getElementById("modalOverlay")
           .classList.remove("active");
         document.getElementById("modalError").textContent = "";
         document.getElementById("authEmail").value = "";
         document.getElementById("authPassword").value = "";
 
-        // Flash green confirmation
         authStatus.style.color = "#2e7d32";
         setTimeout(() => { authStatus.style.color = ""; }, 2000);
 
-      } else {
+      } else if (user && user.isAnonymous) {
+        // Leftover anonymous session
+        anonymousUid = user.uid;
         currentUser = null;
         authStatus.textContent = "Not signed in";
         authButtons.innerHTML =
@@ -464,16 +497,32 @@
         document.getElementById("openAuthBtn")
           .addEventListener("click", openModal);
 
-        // Hide rating UI, show sign in prompt
+        // Show banner and sign in prompt
+        anonBanner.style.display = "block";
         signinPrompt.style.display = "block";
         ratingUI.style.display = "none";
 
-        // Attach listener to the prompt button too
+        document.getElementById("signinPromptBtn")
+          .addEventListener("click", openModal);
+
+      } else {
+        // Fully signed out
+        anonymousUid = null;
+        currentUser = null;
+        authStatus.textContent = "Not signed in";
+        authButtons.innerHTML =
+          `<button id="openAuthBtn">Sign In / Create Account</button>`;
+        document.getElementById("openAuthBtn")
+          .addEventListener("click", openModal);
+
+        anonBanner.style.display = "none";
+        signinPrompt.style.display = "block";
+        ratingUI.style.display = "none";
+
         document.getElementById("signinPromptBtn")
           .addEventListener("click", openModal);
       }
     });
-
     // --- MODAL CONTROLS ---
     function openModal() {
       document.getElementById("modalOverlay").classList.add("active");
@@ -492,18 +541,62 @@
         const btn = document.getElementById("emailSignInBtn");
         const toggle = document.getElementById("toggleAuthMode");
         const optIn = document.querySelector(".optin-row");
+        const modalTitle = document.querySelector(".modal h2");
+        const forgotLink = document.getElementById("forgotPasswordLink");
         if (isSignUp) {
+          modalTitle.textContent = "Create Account";
           btn.textContent = "Continue with Email";
-          toggle.textContent = "Sign in instead";
+          toggle.textContent = "Already have an account? Sign in instead";
           optIn.style.display = "flex";
+          forgotLink.style.display = "none";
         } else {
+          modalTitle.textContent = "Sign In";
           btn.textContent = "Sign In with Email";
-          toggle.textContent = "Create account instead";
+          toggle.textContent = "Need an account? Create one instead";
           optIn.style.display = "none";
+          forgotLink.style.display = "block";
         }
         document.getElementById("modalError").textContent = "";
+        
       });
 
+      document.getElementById("forgotPassword")
+      .addEventListener("click", async () => {
+        const email = document.getElementById("authEmail").value.trim();
+        const modalError = document.getElementById("modalError");
+        if (!email) {
+          modalError.textContent = 
+            "Please enter your email address above first.";
+          return;
+        }
+        try {
+          await sendPasswordResetEmail(auth, email);
+          modalError.style.color = "#2e7d32";
+          modalError.textContent = 
+            "Password reset email sent! Check your inbox.";
+          setTimeout(() => {
+            modalError.style.color = "red";
+            modalError.textContent = "";
+          }, 5000);
+        } catch (err) {
+          modalError.textContent = friendlyError(err.code);
+        }
+      });
+
+// --- MERGE ANONYMOUS RATINGS ---
+    async function mergeAnonymousRatings(anonUid, newUid) {
+      if (!anonUid || anonUid === newUid) return;
+      const ratingsRef = collection(db, "ratings");
+      const q = query(ratingsRef, where("userId", "==", anonUid));
+      const snapshot = await getDocs(q);
+      if (snapshot.empty) return;
+      const batch = writeBatch(db);
+      snapshot.forEach((document) => {
+        const ref = doc(db, "ratings", document.id);
+        batch.update(ref, { userId: newUid });
+      });
+      await batch.commit();
+    }
     // --- MANUAL UI UPDATE ---
     function updateUIForSignedInUser(user) {
       const authStatus = document.getElementById("authStatus");
@@ -534,7 +627,9 @@
         const provider = new GoogleAuthProvider();
         const modalError = document.getElementById("modalError");
         try {
-          await signInWithPopup(auth, provider);
+         const result = await signInWithPopup(auth, provider);
+          await mergeAnonymousRatings(anonymousUid, result.user.uid);
+          updateUIForSignedInUser(result.user);
         } catch (err) {
           modalError.textContent = friendlyError(err.code);
         }
@@ -556,23 +651,39 @@
         }
 
         try {
-          let result;
+          let user;
           if (isSignUp) {
-            result = await createUserWithEmailAndPassword(
-              auth, email, password
-            );
-            await addDoc(collection(db, "users"), {
-              userId: result.user.uid,
-              email: email,
-              emailOptIn: optIn,
-              createdAt: new Date()
-            });
+            try {
+              const result = await createUserWithEmailAndPassword(
+                auth, email, password
+              );
+              user = result.user;
+              await addDoc(collection(db, "users"), {
+                userId: user.uid,
+                email: email,
+                emailOptIn: optIn,
+                createdAt: new Date()
+              });
+            } catch (signUpErr) {
+              if (signUpErr.code === "auth/email-already-in-use") {
+                const result = await signInWithEmailAndPassword(
+                  auth, email, password
+                );
+                user = result.user;
+              } else {
+                throw signUpErr;
+              }
+            }
           } else {
-            result = await signInWithEmailAndPassword(
+            const result = await signInWithEmailAndPassword(
               auth, email, password
             );
+            user = result.user;
           }
-          updateUIForSignedInUser(result.user);
+          if (user) {
+            await mergeAnonymousRatings(anonymousUid, user.uid);
+            updateUIForSignedInUser(user);
+          }
         } catch (err) {
           modalError.textContent = friendlyError(err.code);
         }
@@ -580,20 +691,35 @@
 
     // --- FRIENDLY ERROR MESSAGES ---
     function friendlyError(code) {
-      switch (code) {
-        case "auth/email-already-in-use":
-          return "That email is already registered. Try signing in instead.";
-        case "auth/weak-password":
-          return "Password should be at least 6 characters.";
-        case "auth/invalid-email":
-          return "Please enter a valid email address.";
-        case "auth/wrong-password":
-          return "Incorrect password. Please try again.";
-        case "auth/user-not-found":
-          return "No account found with that email.";
-        default:
-          return "Something went wrong. Please try again.";
+      // Normalize code to handle both formats Firebase returns
+      const normalized = code
+        ? code.toLowerCase()
+               .replace("auth/", "")
+               .replace(/_/g, "-")
+        : "";
+
+      if (normalized.includes("invalid-login") ||
+          normalized.includes("invalid-credential") ||
+          normalized.includes("wrong-password") ||
+          normalized.includes("user-not-found")) {
+        return "Unable to sign in. If you registered with Google, please use the Continue with Google button above instead.";
       }
+      if (normalized.includes("email-already") ||
+          normalized.includes("email-exists") ||
+          normalized.includes("existing-email")) {
+        return "That email is already registered. Try signing in instead.";
+      }
+      if (normalized.includes("weak-password")) {
+        return "Password should be at least 6 characters.";
+      }
+      if (normalized.includes("invalid-email")) {
+        return "Please enter a valid email address.";
+      }
+      if (normalized.includes("different-credential") ||
+          normalized.includes("account-exists")) {
+        return "This email is registered with Google Sign-In. Please use the Continue with Google button above instead.";
+      }
+      return "Something went wrong. Please try again.";
     }
 
     // --- TAB SWITCHING ---
