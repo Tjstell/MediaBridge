@@ -620,7 +620,7 @@
             modalError.textContent = "";
           }, 5000);
         } catch (err) {
-          modalError.textContent = friendlyError(err.code);
+          modalError.textContent = friendlyError(err.code, isSignUp);
         }
       });
 
@@ -823,7 +823,7 @@
     }
 
     // --- FRIENDLY ERROR MESSAGES ---
-    function friendlyError(code) {
+    function friendlyError(code, signUpMode = false) {
       // Normalize code to handle both formats Firebase returns
       const normalized = code
         ? code.toLowerCase()
@@ -831,16 +831,27 @@
                .replace(/_/g, "-")
         : "";
 
-      if (normalized.includes("invalid-login") ||
-          normalized.includes("invalid-credential") ||
-          normalized.includes("wrong-password") ||
-          normalized.includes("user-not-found")) {
-        return "Unable to sign in. If you registered with Google, please use the Continue with Google button above instead.";
-      }
       if (normalized.includes("email-already") ||
           normalized.includes("email-exists") ||
           normalized.includes("existing-email")) {
-        return "That email is already registered. Try signing in instead.";
+        if (signUpMode) {
+          return "That email is already registered. Try signing in instead.";
+        }
+        return "Unable to sign in. If you registered with Google, please use the Continue with Google button above instead.";
+      }
+      if (normalized.includes("wrong-password")) {
+        return "Incorrect password. Please try again or use Forgot Password below.";
+      }
+      if (normalized.includes("user-not-found")) {
+        return "No account found with that email.";
+      }
+      if (normalized.includes("invalid-login") ||
+          normalized.includes("invalid-credential") ||
+          code?.message?.includes("INVALID_LOGIN_CREDENTIALS")) {
+        if (signUpMode) {
+          return "No account found with that email, or incorrect password.";
+        }
+        return "Incorrect email or password. If you signed up with Google, use the Continue with Google button above instead.";
       }
       if (normalized.includes("weak-password")) {
         return "Password should be at least 6 characters.";
