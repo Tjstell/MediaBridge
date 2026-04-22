@@ -363,9 +363,9 @@
     book ratings, which will be used to train a cross-domain
     recommendation model. Once the model is ready, you will be able to
     input your favorite books and get movie recommendations, and vice
-    versa. Thank you so much for helping me build this. A few extra
-    ratings from you personally makes a huge difference, and I
-    genuinely appreciate every single one.
+    versa. If you can rate at least 20 movies and books, it makes a huge
+    difference to the model. The more the better!  Thank you so much for
+    helping me build this!
   </div>
 
  <!-- Anonymous session banner -->
@@ -520,7 +520,7 @@
     import { initializeApp }
       from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
    import { getFirestore, collection, addDoc, query,
-             where, getDocs, writeBatch, doc, updateDoc }
+             where, getDocs, writeBatch, doc, updateDoc, setDoc }
       from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
     import { getAuth, GoogleAuthProvider, signInWithPopup,
              createUserWithEmailAndPassword,
@@ -743,8 +743,8 @@
                 auth, email, password
               );
               user = result.user;
-              await addDoc(collection(db, "users"), {
-                userId: user.uid,
+              await setDoc(doc(db, "users", result.user.uid), {
+                userId: result.user.uid,
                 email: email,
                 emailOptIn: optIn,
                 createdAt: new Date()
