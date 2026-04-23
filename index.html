@@ -338,6 +338,74 @@
       margin-left: 4px;
       color: #666;
     }
+    .suggestion-card {
+      display: flex;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid #eee;
+      gap: 10px;
+    }
+    .suggestion-card:last-child {
+      border-bottom: none;
+    }
+    .suggestion-info {
+      flex: 1;
+      font-size: 14px;
+    }
+    .suggestion-info .suggestion-title {
+      font-weight: bold;
+      color: #333;
+    }
+    .suggestion-info .suggestion-sub {
+      color: #999;
+      font-size: 12px;
+      margin-top: 2px;
+    }
+    .suggestion-rating {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .suggestion-rating input {
+      width: 50px;
+      padding: 5px;
+      font-size: 13px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      text-align: center;
+    }
+    .suggestion-rate-btn {
+      padding: 5px 12px;
+      font-size: 13px;
+      cursor: pointer;
+      background: #4a90e2;
+      color: white;
+      border: none;
+      border-radius: 4px;
+    }
+    .suggestion-rate-btn:hover {
+      background: #357abd;
+    }
+    .suggestion-rate-btn.rated {
+      background: #2e7d32;
+      cursor: default;
+    }
+    .suggestions-footer {
+      text-align: center;
+      margin-top: 15px;
+    }
+    .suggestions-footer button {
+      background: none;
+      border: 1px solid #ccc;
+      padding: 8px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      color: #666;
+    }
+    .suggestions-footer button:hover {
+      background: #f0f0f0;
+    }
   </style>
 </head>
 <body>
@@ -363,8 +431,9 @@
     book ratings, which will be used to train a cross-domain
     recommendation model. Once the model is ready, you will be able to
     input your favorite books and get movie recommendations, and vice
-    versa. If you can rate at least 20 movies and books, it makes a huge
-    difference to the model. The more the better!  Thank you so much for
+    versa. I would love it if you can rate at least 20 movies and books,
+    if you could rate 40, that would be even better, and make a huge
+    difference to the model.  Thank you so much for
     helping me build this!
   </div>
 
@@ -416,6 +485,12 @@
                placeholder="Start typing a movie title...">
         <div class="autocomplete-list" id="movieList"></div>
       </div>
+      <button id="suggestMoviesBtn" style="background:none; border:1px 
+        solid #ccc; padding:8px 15px; border-radius:4px; cursor:pointer;
+        font-size:13px; color:#666; margin-bottom:15px;">
+        Suggest some movies for me
+      </button>
+      <div id="movieSuggestions"></div>
     </div>
 
     <!-- Book tab -->
@@ -426,6 +501,12 @@
                placeholder="Start typing a book title...">
         <div class="autocomplete-list" id="bookList"></div>
       </div>
+      <button id="suggestBooksBtn" style="background:none; border:1px 
+        solid #ccc; padding:8px 15px; border-radius:4px; cursor:pointer;
+        font-size:13px; color:#666; margin-bottom:15px;">
+        Suggest some books for me
+      </button>
+      <div id="bookSuggestions"></div>
     </div>
 
     <!-- My Ratings tab -->
@@ -947,6 +1028,465 @@
         }
       });
 
+      // --- MOVIE SUGGESTIONS ---
+    let movieSuggestionPage = 1;
+    let ratedMovieIds = new Set();
+    let ratedBookIds = new Set();
+
+    async function loadRatedIds() {
+      if (!currentUser) return;
+      const q = query(
+        collection(db, "ratings"),
+        where("userId", "==", currentUser.uid)
+      );
+      const snapshot = await getDocs(q);
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        if (data.type === "movie") ratedMovieIds.add(String(data.id));
+        else ratedBookIds.add(data.id);
+      });
+    }
+
+    async function loadMovieSuggestions(page = 1) {
+      const container = document.getElementById("movieSuggestions");
+      container.innerHTML = 
+        `<p style="color:#666; font-size:13px;">Loading suggestions...</p>`;
+
+      await loadRatedIds();
+
+      const res = await fetch(
+        `https://api.themoviedb.org/3/movie/popular?api_key=${TMDB_KEY}&page=${page}`
+      );
+      const data = await res.json();
+
+      // Filter out already rated movies and shuffle
+      const unrated = data.results
+        .filter(movie => !ratedMovieIds.has(String(movie.id)))
+        .sort(() => Math.random() - 0.5);
+
+      if (unrated.length === 0) {
+        container.innerHTML = 
+          `<p style="color:#666; font-size:13px;">
+            You have rated everything on this page! 
+            Try the next batch.
+          </p>`;
+      } else {
+        let html = "";
+        unrated.slice(0, 6).forEach(movie => {
+          const year = movie.release_date
+            ? movie.release_date.substring(0, 4) : "N/A";
+          html += `
+            <div class="suggestion-card" id="suggest-${movie.id}">
+              <div class="suggestion-info">
+                <div class="suggestion-title">${movie.title}</div>
+                <div class="suggestion-sub">${year}</div>
+              </div>
+              <div class="suggestion-rating">
+                <input type="number" min="1" max="10" 
+                  placeholder="1-10"
+                  id="suggest-input-${movie.id}">
+                <button class="suggestion-rate-btn"
+                  data-id="${movie.id}"
+                  data-title="${movie.title.replace(/"/g, '&quot;')}"
+                  data-year="${year}"
+                  data-type="movie">
+                  Rate
+                </button>
+              </div>
+            </div>`;
+        });
+        html += `
+          <div class="suggestions-footer">
+            <button id="loadMoreMoviesBtn">
+              Show me different ones
+            </button>
+          </div>`;
+        container.innerHTML = html;
+
+        document.getElementById("loadMoreMoviesBtn")
+          .addEventListener("click", () => {
+            movieSuggestionPage++;
+            loadMovieSuggestions(movieSuggestionPage);
+          });
+      }
+
+      // Handle rate button clicks
+      container.querySelectorAll(".suggestion-rate-btn")
+        .forEach(btn => {
+          btn.addEventListener("click", async () => {
+            const id = btn.dataset.id;
+            const input = document.getElementById(`suggest-input-${id}`);
+            const rating = parseInt(input.value);
+
+            if (!rating || rating < 1 || rating > 10) {
+              input.style.borderColor = "red";
+              return;
+            }
+            input.style.borderColor = "#ccc";
+
+            const ratingDocId = `${currentUser.uid}_${id}`;
+            await setDoc(doc(db, "ratings", ratingDocId), {
+              id: id,
+              title: btn.dataset.title,
+              year: btn.dataset.year,
+              type: "movie",
+              rating: rating,
+              userId: currentUser.uid,
+              timestamp: new Date()
+            }, { merge: true });
+
+            // Mark as rated
+            ratedMovieIds.add(String(id));
+            btn.textContent = "Rated!";
+            btn.classList.add("rated");
+            btn.disabled = true;
+            input.disabled = true;
+
+            // Update status message
+            document.getElementById("status").textContent =
+              `Saved! You rated "${btn.dataset.title}" a ${rating}/10.`;
+          });
+        });
+    }
+
+    // --- BOOK SUGGESTIONS ---
+    const popularBooks = [
+      // Classics and all-time popular
+      "The Great Gatsby",
+      "To Kill a Mockingbird",
+      "1984",
+      "Harry Potter and the Philosopher's Stone",
+      "Harry Potter and the Chamber of Secrets",
+      "Harry Potter and the Prisoner of Azkaban",
+      "Harry Potter and the Goblet of Fire",
+      "Harry Potter and the Order of the Phoenix",
+      "Harry Potter and the Half-Blood Prince",
+      "Harry Potter and the Deathly Hallows",
+      "The Hobbit",
+      "Pride and Prejudice",
+      "The Catcher in the Rye",
+      "The Lord of the Rings",
+      "Animal Farm",
+      "Brave New World",
+      "The Da Vinci Code",
+      "Gone Girl",
+      "The Girl with the Dragon Tattoo",
+      "Twilight",
+      "The Hunger Games",
+      "Catching Fire",
+      "Mockingjay",
+      "Divergent",
+      "Ender's Game",
+      "Dune",
+      "Foundation",
+      "Neuromancer",
+      "The Road",
+      "No Country for Old Men",
+      "Blood Meridian",
+      "Beloved",
+      "The Color Purple",
+      "One Hundred Years of Solitude",
+      "Kafka on the Shore",
+      "Norwegian Wood",
+      "The Name of the Wind",
+      "A Game of Thrones",
+      "A Clash of Kings",
+      "A Storm of Swords",
+      "The Way of Kings",
+      "Mistborn",
+      "The Hitchhiker's Guide to the Galaxy",
+      "Good Omens",
+      "American Gods",
+      "Coraline",
+      "The Alchemist",
+      "Life of Pi",
+      "The Kite Runner",
+      "A Thousand Splendid Suns",
+      "Educated",
+      "Becoming",
+      "Sapiens",
+      "A Brief History of Time",
+      "Thinking Fast and Slow",
+      "Atomic Habits",
+      "The Power of Habit",
+      "Outliers",
+      "Freakonomics",
+      // 2020 Bestsellers
+      "A Promised Land",
+      "Too Much and Never Enough",
+      "Where the Crawdads Sing",
+      "Midnight Sun",
+      "Untamed",
+      "The Vanishing Half",
+      "The Midnight Library",
+      "The Invisible Life of Addie LaRue",
+      "Mexican Gothic",
+      "Piranesi",
+      "The Guest List",
+      "Project Hail Mary",
+      "The Four Winds",
+      "Anxious People",
+      "The Sanatorium",
+      "Shuggie Bain",
+      // 2021 Bestsellers
+      "The Maid",
+      "Cloud Cuckoo Land",
+      "The Last Thing He Told Me",
+      "Malibu Rising",
+      "The Maidens",
+      "Apples Never Fall",
+      "The Final Gambit",
+      "Matrix",
+      "Bewilderment",
+      "Great Circle",
+      "Klara and the Sun",
+      "The Love Hypothesis",
+      "People We Meet on Vacation",
+      "The Vicar of Wakefield",
+      "Crying in H Mart",
+      "Finding Me",
+      // 2022 Bestsellers
+      "Fourth Wing",
+      "Iron Flame",
+      "Lessons in Chemistry",
+      "Tomorrow and Tomorrow and Tomorrow",
+      "Demon Copperhead",
+      "The Spare",
+      "Babel",
+      "The Woman in Me",
+      "Happy Place",
+      "Book Lovers",
+      "Verity",
+      "It Ends with Us",
+      "November 9",
+      "Ugly Love",
+      "The Seven Husbands of Evelyn Hugo",
+      "Daisy Jones and The Six",
+      "Carrie Soto Is Back",
+      "Hell Bent",
+      "The Candy House",
+      "Trust",
+      "Sea of Tranquility",
+      "The Locked Door",
+      "The It Girl",
+      "The Match",
+      "Reminders of Him",
+      // 2023 Bestsellers
+      "Happy Place",
+      "Intermezzo",
+      "James",
+      "The Women",
+      "Orbital",
+      "The God of the Woods",
+      "All Fours",
+      "The Life Impossible",
+      "The Covenant of Water",
+      "Hello Beautiful",
+      "Yellowface",
+      "Happy Hours",
+      "The Familiar",
+      "The Housemaid",
+      "The Housemaid's Secret",
+      "The Teacher",
+      "The Coworker",
+      "A Court of Thorns and Roses",
+      "A Court of Mist and Fury",
+      "A Court of Wings and Ruin",
+      "From Blood and Ash",
+      "A Shadow in the Ember",
+      "The Bridge Kingdom",
+      "House of Salt and Sorrows",
+      "Kingdom of the Wicked",
+      "The Atlas Six",
+      "These Hollow Vows",
+      // 2024 Bestsellers
+      "Sunrise on the Reaping",
+      "Atmosphere",
+      "Great Big Beautiful Life",
+      "The Women",
+      "James by Percival Everett",
+      "All Fours",
+      "The Life Impossible",
+      "Intermezzo",
+      "The God of the Woods",
+      "Eruption",
+      "The Boyfriend",
+      "The Waiting",
+      "In Too Deep",
+      "The Grey Wolf",
+      "Wind and Truth",
+      "Onyx Storm",
+      "Funny Story",
+      "Glacier",
+      "The Lost Story",
+      "The Pairing",
+      "Only If You're Lucky",
+      "The Fragile Threads of Power",
+      "The Hurricane Wars",
+      "Starter Villain",
+      "Some Desperate Glory",
+      "The Adventures of Amina al-Sirafi",
+      // Nonfiction popular
+      "Spare",
+      "The Light We Carry",
+      "I'm Glad My Mom Died",
+      "Born a Crime",
+      "Know My Name",
+      "Just as I Am",
+      "Will",
+      "Greenlights",
+      "The Body Keeps the Score",
+      "Maybe You Should Talk to Someone",
+      "Why Fish Don't Exist",
+      "Hidden Potential",
+      "Slow Productivity",
+      "Same as Ever",
+      "Build",
+      "Never Finished",
+      "Burn Book",
+      "The Wager",
+      "Say Nothing",
+      "Empire of Pain",
+      "Devil in the White City",
+      "Killers of the Flower Moon",
+      "The Immortal Life of Henrietta Lacks",
+      "Between the World and Me"
+    ];
+
+    let bookSuggestionIndex = 0;
+
+    async function loadBookSuggestions() {
+      const container = document.getElementById("bookSuggestions");
+      container.innerHTML =
+        `<p style="color:#666; font-size:13px;">Loading suggestions...</p>`;
+
+      await loadRatedIds();
+
+      const unratedBooks = popularBooks.filter(title => {
+        const normalizedId = title.toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, "");
+        return !ratedBookIds.has(normalizedId);
+      });
+
+      if (unratedBooks.length === 0) {
+        container.innerHTML =
+          `<p style="color:#666; font-size:13px;">
+            You have rated all our suggested books — impressive!
+          </p>`;
+        return;
+      }
+
+      // Shuffle and pick 6
+      const shuffled = unratedBooks
+        .sort(() => Math.random() - 0.5)
+        .slice(0, 6);
+
+      let html = "";
+
+      for (const title of shuffled) {
+        const res = await fetch(
+          `https://www.googleapis.com/books/v1/volumes?q=intitle:${encodeURIComponent(title)}&maxResults=1&key=${CONFIG.BOOKS_KEY}`
+        );
+        const data = await res.json();
+
+        if (!data.items || data.items.length === 0) continue;
+
+        const info = data.items[0].volumeInfo;
+        const author = info.authors ? info.authors[0] : "Unknown Author";
+        const year = info.publishedDate
+          ? info.publishedDate.substring(0, 4) : "N/A";
+        const normalizedId = `${title}-${author}`
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, "");
+
+        html += `
+          <div class="suggestion-card" id="suggest-${normalizedId}">
+            <div class="suggestion-info">
+              <div class="suggestion-title">${title}</div>
+              <div class="suggestion-sub">${author} (${year})</div>
+            </div>
+            <div class="suggestion-rating">
+              <input type="number" min="1" max="10"
+                placeholder="1-10"
+                id="suggest-input-${normalizedId}">
+              <button class="suggestion-rate-btn"
+                data-id="${normalizedId}"
+                data-title="${title.replace(/"/g, '&quot;')}"
+                data-author="${author.replace(/"/g, '&quot;')}"
+                data-year="${year}"
+                data-type="book">
+                Rate
+              </button>
+            </div>
+          </div>`;
+      }
+
+      html += `
+        <div class="suggestions-footer">
+          <button id="loadMoreBooksBtn">
+            Show me different ones
+          </button>
+        </div>`;
+      container.innerHTML = html;
+
+      document.getElementById("loadMoreBooksBtn")
+        .addEventListener("click", () => {
+          loadBookSuggestions();
+        });
+
+      // Handle rate button clicks
+      container.querySelectorAll(".suggestion-rate-btn")
+        .forEach(btn => {
+          btn.addEventListener("click", async () => {
+            const id = btn.dataset.id;
+            const input = document.getElementById(`suggest-input-${id}`);
+            const rating = parseInt(input.value);
+
+            if (!rating || rating < 1 || rating > 10) {
+              input.style.borderColor = "red";
+              return;
+            }
+            input.style.borderColor = "#ccc";
+
+            const ratingDocId = `${currentUser.uid}_${id}`;
+            await setDoc(doc(db, "ratings", ratingDocId), {
+              id: id,
+              title: btn.dataset.title,
+              author: btn.dataset.author,
+              year: btn.dataset.year,
+              type: "book",
+              rating: rating,
+              userId: currentUser.uid,
+              timestamp: new Date()
+            }, { merge: true });
+
+            ratedBookIds.add(id);
+            btn.textContent = "Rated!";
+            btn.classList.add("rated");
+            btn.disabled = true;
+            input.disabled = true;
+
+            document.getElementById("status").textContent =
+              `Saved! You rated "${btn.dataset.title}" a ${rating}/10.`;
+          });
+        });
+    }
+
+    // Attach suggestion button listeners
+    document.getElementById("suggestMoviesBtn")
+      .addEventListener("click", () => {
+        movieSuggestionPage = 1;
+        loadMovieSuggestions(movieSuggestionPage);
+      });
+
+    document.getElementById("suggestBooksBtn")
+      .addEventListener("click", () => {
+        bookSuggestionIndex = 0;
+        loadBookSuggestions();
+      });
+
     // --- FRIENDLY ERROR MESSAGES ---
     function friendlyError(code, signUpMode = false) {
       // Normalize code to handle both formats Firebase returns
@@ -1167,12 +1707,15 @@
         }
 
         try {
-          await addDoc(collection(db, "ratings"), {
+          // Create a deterministic document ID from userId and item id
+          // This ensures duplicate ratings overwrite rather than duplicate
+          const ratingDocId = `${currentUser.uid}_${activeItem.id}`;
+          await setDoc(doc(db, "ratings", ratingDocId), {
             ...activeItem,
             rating: rating,
             userId: currentUser.uid,
             timestamp: new Date()
-          });
+          }, { merge: true });
           status.textContent =
             `Saved! You rated "${activeItem.title}" a ${rating}/10.`;
           movieInput.value = "";
