@@ -338,45 +338,109 @@
       margin-left: 4px;
       color: #666;
     }
-    .suggestion-card {
+    .suggestions-container {
+      margin-bottom: 20px;
+    }
+    .suggestions-header {
       display: flex;
+      justify-content: space-between;
       align-items: center;
-      padding: 10px 0;
-      border-bottom: 1px solid #eee;
-      gap: 10px;
+      margin-bottom: 12px;
     }
-    .suggestion-card:last-child {
-      border-bottom: none;
-    }
-    .suggestion-info {
-      flex: 1;
+    .suggestions-header span {
       font-size: 14px;
-    }
-    .suggestion-info .suggestion-title {
       font-weight: bold;
+      color: #444;
+    }
+    .suggestions-close {
+      background: none;
+      border: none;
+      font-size: 20px;
+      cursor: pointer;
+      color: #999;
+      padding: 0;
+      line-height: 1;
+    }
+    .suggestions-close:hover {
       color: #333;
     }
-    .suggestion-info .suggestion-sub {
-      color: #999;
-      font-size: 12px;
-      margin-top: 2px;
+    .suggestions-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 10px;
+      margin-bottom: 15px;
     }
-    .suggestion-rating {
+    @media (max-width: 600px) {
+      .suggestions-grid {
+        grid-template-columns: repeat(3, 1fr);
+      }
+    }
+    .suggestion-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+    }
+    .suggestion-card img {
+      width: 100%;
+      aspect-ratio: 2/3;
+      object-fit: cover;
+      border-radius: 4px;
+      margin-bottom: 6px;
+      background: #eee;
+    }
+    .suggestion-card .no-cover {
+      width: 100%;
+      aspect-ratio: 2/3;
+      background: #e8e8e8;
+      border-radius: 4px;
+      margin-bottom: 6px;
       display: flex;
       align-items: center;
-      gap: 6px;
-    }
-    .suggestion-rating input {
-      width: 50px;
+      justify-content: center;
+      font-size: 11px;
+      color: #999;
+      text-align: center;
       padding: 5px;
-      font-size: 13px;
+      box-sizing: border-box;
+    }
+    .suggestion-card .suggestion-title {
+      font-size: 11px;
+      font-weight: bold;
+      color: #333;
+      margin-bottom: 2px;
+      line-height: 1.3;
+      max-height: 2.6em;
+      overflow: hidden;
+    }
+    .suggestion-card .suggestion-sub {
+      font-size: 10px;
+      color: #999;
+      margin-bottom: 6px;
+      line-height: 1.3;
+      max-height: 1.3em;
+      overflow: hidden;
+    }
+    .suggestion-card .suggestion-rating {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      width: 100%;
+    }
+    .suggestion-card .suggestion-rating input {
+      width: 100%;
+      padding: 4px;
+      font-size: 12px;
       border: 1px solid #ccc;
       border-radius: 4px;
       text-align: center;
+      box-sizing: border-box;
     }
     .suggestion-rate-btn {
-      padding: 5px 12px;
-      font-size: 13px;
+      width: 100%;
+      padding: 4px;
+      font-size: 12px;
       cursor: pointer;
       background: #4a90e2;
       color: white;
@@ -392,7 +456,7 @@
     }
     .suggestions-footer {
       text-align: center;
-      margin-top: 15px;
+      margin-top: 10px;
     }
     .suggestions-footer button {
       background: none;
@@ -1049,8 +1113,10 @@
 
     async function loadMovieSuggestions(page = 1) {
       const container = document.getElementById("movieSuggestions");
-      container.innerHTML = 
-        `<p style="color:#666; font-size:13px;">Loading suggestions...</p>`;
+      container.innerHTML =
+        `<p style="color:#666; font-size:13px;">
+          Loading suggestions...
+        </p>`;
 
       await loadRatedIds();
 
@@ -1059,58 +1125,80 @@
       );
       const data = await res.json();
 
-      // Filter out already rated movies and shuffle
       const unrated = data.results
         .filter(movie => !ratedMovieIds.has(String(movie.id)))
         .sort(() => Math.random() - 0.5);
 
       if (unrated.length === 0) {
-        container.innerHTML = 
+        container.innerHTML =
           `<p style="color:#666; font-size:13px;">
-            You have rated everything on this page! 
-            Try the next batch.
+            You have rated everything on this page! Try the next batch.
           </p>`;
-      } else {
-        let html = "";
-        unrated.slice(0, 6).forEach(movie => {
-          const year = movie.release_date
-            ? movie.release_date.substring(0, 4) : "N/A";
-          html += `
-            <div class="suggestion-card" id="suggest-${movie.id}">
-              <div class="suggestion-info">
-                <div class="suggestion-title">${movie.title}</div>
-                <div class="suggestion-sub">${year}</div>
-              </div>
-              <div class="suggestion-rating">
-                <input type="number" min="1" max="10" 
-                  placeholder="1-10"
-                  id="suggest-input-${movie.id}">
-                <button class="suggestion-rate-btn"
-                  data-id="${movie.id}"
-                  data-title="${movie.title.replace(/"/g, '&quot;')}"
-                  data-year="${year}"
-                  data-type="movie">
-                  Rate
-                </button>
-              </div>
-            </div>`;
-        });
+        return;
+      }
+
+      let html = `
+        <div class="suggestions-container">
+          <div class="suggestions-header">
+            <span>Popular Movies</span>
+            <button class="suggestions-close" 
+              id="closeMovieSuggestions">&#x2715;</button>
+          </div>
+          <div class="suggestions-grid">`;
+
+      unrated.slice(0, 6).forEach(movie => {
+        const year = movie.release_date
+          ? movie.release_date.substring(0, 4) : "N/A";
+        const posterUrl = movie.poster_path
+          ? `https://image.tmdb.org/t/p/w200${movie.poster_path}`
+          : null;
+        const imageHtml = posterUrl
+          ? `<img src="${posterUrl}" alt="${movie.title}" 
+               loading="lazy">`
+          : `<div class="no-cover">${movie.title}</div>`;
+
         html += `
+          <div class="suggestion-card" id="suggest-${movie.id}">
+            ${imageHtml}
+            <div class="suggestion-title">${movie.title}</div>
+            <div class="suggestion-sub">${year}</div>
+            <div class="suggestion-rating">
+              <input type="number" min="1" max="10"
+                placeholder="1-10"
+                id="suggest-input-${movie.id}">
+              <button class="suggestion-rate-btn"
+                data-id="${movie.id}"
+                data-title="${movie.title.replace(/"/g, '&quot;')}"
+                data-year="${year}"
+                data-type="movie">
+                Rate
+              </button>
+            </div>
+          </div>`;
+      });
+
+      html += `
+          </div>
           <div class="suggestions-footer">
             <button id="loadMoreMoviesBtn">
               Show me different ones
             </button>
-          </div>`;
-        container.innerHTML = html;
+          </div>
+        </div>`;
 
-        document.getElementById("loadMoreMoviesBtn")
-          .addEventListener("click", () => {
-            movieSuggestionPage++;
-            loadMovieSuggestions(movieSuggestionPage);
-          });
-      }
+      container.innerHTML = html;
 
-      // Handle rate button clicks
+      document.getElementById("closeMovieSuggestions")
+        .addEventListener("click", () => {
+          container.innerHTML = "";
+        });
+
+      document.getElementById("loadMoreMoviesBtn")
+        .addEventListener("click", () => {
+          movieSuggestionPage = Math.floor(Math.random() * 20) + 1;
+          loadMovieSuggestions(movieSuggestionPage);
+        });
+
       container.querySelectorAll(".suggestion-rate-btn")
         .forEach(btn => {
           btn.addEventListener("click", async () => {
@@ -1135,14 +1223,12 @@
               timestamp: new Date()
             }, { merge: true });
 
-            // Mark as rated
             ratedMovieIds.add(String(id));
             btn.textContent = "Rated!";
             btn.classList.add("rated");
             btn.disabled = true;
             input.disabled = true;
 
-            // Update status message
             document.getElementById("status").textContent =
               `Saved! You rated "${btn.dataset.title}" a ${rating}/10.`;
           });
@@ -1150,11 +1236,8 @@
     }
 
     // --- BOOK SUGGESTIONS ---
-    const popularBooks = [
-      // Classics and all-time popular
-      "The Great Gatsby",
-      "To Kill a Mockingbird",
-      "1984",
+   const popularBooks = [
+      // Harry Potter series
       "Harry Potter and the Philosopher's Stone",
       "Harry Potter and the Chamber of Secrets",
       "Harry Potter and the Prisoner of Azkaban",
@@ -1162,195 +1245,345 @@
       "Harry Potter and the Order of the Phoenix",
       "Harry Potter and the Half-Blood Prince",
       "Harry Potter and the Deathly Hallows",
-      "The Hobbit",
-      "Pride and Prejudice",
-      "The Catcher in the Rye",
+
+      // All-time classics
+      "Don Quixote",
+      "A Tale of Two Cities",
       "The Lord of the Rings",
+      "The Little Prince",
+      "And Then There Were None",
+      "Alice in Wonderland",
+      "The Lion the Witch and the Wardrobe",
+      "The Adventures of Huckleberry Finn",
+      "The Adventures of Tom Sawyer",
+      "Treasure Island",
+      "Frankenstein",
+      "Dracula",
+      "The Jungle Book",
+      "Twenty Thousand Leagues Under the Sea",
+      "The Time Machine",
+      "The War of the Worlds",
+      "The Picture of Dorian Gray",
+      "Crime and Punishment",
+      "The Brothers Karamazov",
+      "War and Peace",
+      "Anna Karenina",
+      "Madame Bovary",
+      "Les Misérables",
+      "The Count of Monte Cristo",
+      "Wuthering Heights",
+      "Jane Eyre",
+      "Sense and Sensibility",
+      "Emma",
+      "Moby Dick",
+      "Great Expectations",
+      "Oliver Twist",
+      "David Copperfield",
+      "The Great Gatsby",
+      "To Kill a Mockingbird",
+      "1984",
       "Animal Farm",
       "Brave New World",
+      "Of Mice and Men",
+      "East of Eden",
+      "The Old Man and the Sea",
+      "For Whom the Bell Tolls",
+      "Catch-22",
+      "Slaughterhouse-Five",
+      "The Catcher in the Rye",
+      "Lord of the Flies",
+      "One Flew Over the Cuckoo's Nest",
+      "Beloved",
+      "The Color Purple",
+      "Their Eyes Were Watching God",
+      "The Road",
+      "No Country for Old Men",
+      "Blood Meridian",
+      "Fahrenheit 451",
+      "The Handmaid's Tale",
+      "Dune",
+      "Foundation",
+      "Ender's Game",
+      "Neuromancer",
+      "The Hobbit",
+      "A Game of Thrones",
+      "A Clash of Kings",
+      "A Storm of Swords",
+      "The Name of the Wind",
+      "The Wise Man's Fear",
+      "The Way of Kings",
+      "Words of Radiance",
+      "Oathbringer",
+      "Rhythm of War",
+      "Mistborn",
+      "Good Omens",
+      "American Gods",
+      "Coraline",
+      "Neverwhere",
+      "The Hitchhiker's Guide to the Galaxy",
       "The Da Vinci Code",
-      "Gone Girl",
+      "Angels and Demons",
       "The Girl with the Dragon Tattoo",
+      "Gone Girl",
       "Twilight",
+      "New Moon",
+      "Eclipse",
+      "Breaking Dawn",
       "The Hunger Games",
       "Catching Fire",
       "Mockingjay",
       "Divergent",
-      "Ender's Game",
-      "Dune",
-      "Foundation",
-      "Neuromancer",
-      "The Road",
-      "No Country for Old Men",
-      "Blood Meridian",
-      "Beloved",
-      "The Color Purple",
-      "One Hundred Years of Solitude",
-      "Kafka on the Shore",
-      "Norwegian Wood",
-      "The Name of the Wind",
-      "A Game of Thrones",
-      "A Clash of Kings",
-      "A Storm of Swords",
-      "The Way of Kings",
-      "Mistborn",
-      "The Hitchhiker's Guide to the Galaxy",
-      "Good Omens",
-      "American Gods",
-      "Coraline",
+      "The Maze Runner",
       "The Alchemist",
       "Life of Pi",
       "The Kite Runner",
       "A Thousand Splendid Suns",
-      "Educated",
-      "Becoming",
-      "Sapiens",
-      "A Brief History of Time",
+      "One Hundred Years of Solitude",
+      "Kafka on the Shore",
+      "Norwegian Wood",
+      "The Wind-Up Bird Chronicle",
+      "Never Let Me Go",
+      "Klara and the Sun",
+
+      // 2000-2004 Bestsellers
+      "Who Moved My Cheese",
+      "The Lovely Bones",
+      "Good to Great",
+      "The Nanny Diaries",
+      "The Secret Life of Bees",
+      "The Purpose Driven Life",
+      "Skipping Christmas",
+      "The Brethren",
+      "John Adams",
+      "A Beautiful Mind",
+      "The Corrections",
+      "Atonement",
+      "The Hours",
+      "White Teeth",
+      "Life of Pi",
+      "The Curious Incident of the Dog in the Night-Time",
+      "The Five People You Meet in Heaven",
+      "Eragon",
+      "The Last Juror",
+      "A Short History of Nearly Everything",
+
+      // 2005-2009 Bestsellers
+      "The World Is Flat",
+      "Marley and Me",
+      "The Kite Runner",
+      "Eat Pray Love",
+      "A Thousand Splendid Suns",
+      "The Shack",
+      "Twilight",
+      "The Host",
+      "Stephenie Meyer Breaking Dawn",
+      "The Story of Edgar Sawtelle",
+      "The Appeal",
+      "Dear John",
+      "The Last Song",
+      "The Lucky One",
+      "Water for Elephants",
+      "The Help",
+      "The Book Thief",
+      "Outlander",
+      "Dragonfly in Amber",
+      "The Pillars of the Earth",
+      "World Without End",
+      "The Road",
+      "Revolutionary Road",
+      "The Guernsey Literary and Potato Peel Pie Society",
+      "People of the Book",
+      "The Girl with the Dragon Tattoo",
+      "The Girl Who Played with Fire",
+      "Lost Symbol",
+      "Under the Dome",
+      "The Help",
+
+      // 2010-2014 Bestsellers
+      "The Girl Who Kicked the Hornets Nest",
+      "Freedom",
+      "The Passage",
+      "Room",
+      "The Hunger Games",
+      "Catching Fire",
+      "Mockingjay",
+      "Heaven is for Real",
+      "The Art of Racing in the Rain",
+      "The Shack",
+      "Safe Haven",
+      "Unbroken",
+      "Gone Girl",
+      "Fifty Shades of Grey",
+      "Fifty Shades Darker",
+      "Fifty Shades Freed",
+      "The Fault in Our Stars",
+      "Divergent",
+      "Insurgent",
+      "Allegiant",
+      "Inferno",
+      "The Goldfinch",
+      "All the Light We Cannot See",
+      "The Maze Runner",
+      "Divergent",
+      "The Martian",
+      "Station Eleven",
+      "Big Little Lies",
+      "The Girl on the Train",
+      "Me Before You",
+      "The Light Between Oceans",
+      "The Nightingale",
+      "A Little Life",
+      "The Sympathizer",
+      "Between the World and Me",
+      "Being Mortal",
+      "When Breath Becomes Air",
       "Thinking Fast and Slow",
-      "Atomic Habits",
+      "Quiet: The Power of Introverts",
       "The Power of Habit",
-      "Outliers",
-      "Freakonomics",
-      // 2020 Bestsellers
-      "A Promised Land",
-      "Too Much and Never Enough",
+      "Lean In",
+
+      // 2015-2019 Bestsellers
+      "The Life-Changing Magic of Tidying Up",
+      "Go Set a Watchman",
+      "The Subtle Art of Not Giving a F*ck",
+      "Hillbilly Elegy",
+      "Milk and Honey",
+      "The Underground Railroad",
+      "Homegoing",
+      "Little Fires Everywhere",
+      "Becoming",
       "Where the Crawdads Sing",
-      "Midnight Sun",
-      "Untamed",
+      "Educated",
+      "The Tattooist of Auschwitz",
+      "Eleanor Oliphant is Completely Fine",
+      "Before We Were Yours",
+      "The Alice Network",
+      "The Giver of Stars",
+      "Circe",
+      "The Overstory",
+      "Normal People",
+      "Such a Fun Age",
+      "The Starless Sea",
+      "City of Girls",
+      "The Testaments",
+      "Girl Wash Your Face",
+      "Wonder",
+      "Commonwealth",
+      "Lincoln in the Bardo",
+      "A Man Called Ove",
+      "The Great Alone",
+      "Recursion",
+
+      // 2020-2024 Bestsellers
+      "A Promised Land",
       "The Vanishing Half",
       "The Midnight Library",
       "The Invisible Life of Addie LaRue",
       "Mexican Gothic",
       "Piranesi",
-      "The Guest List",
       "Project Hail Mary",
       "The Four Winds",
       "Anxious People",
-      "The Sanatorium",
-      "Shuggie Bain",
-      // 2021 Bestsellers
-      "The Maid",
-      "Cloud Cuckoo Land",
-      "The Last Thing He Told Me",
-      "Malibu Rising",
-      "The Maidens",
-      "Apples Never Fall",
-      "The Final Gambit",
-      "Matrix",
-      "Bewilderment",
-      "Great Circle",
-      "Klara and the Sun",
       "The Love Hypothesis",
       "People We Meet on Vacation",
-      "The Vicar of Wakefield",
       "Crying in H Mart",
-      "Finding Me",
-      // 2022 Bestsellers
+      "Malibu Rising",
+      "The Last Thing He Told Me",
       "Fourth Wing",
       "Iron Flame",
       "Lessons in Chemistry",
       "Tomorrow and Tomorrow and Tomorrow",
       "Demon Copperhead",
-      "The Spare",
+      "Spare",
       "Babel",
       "The Woman in Me",
       "Happy Place",
       "Book Lovers",
       "Verity",
       "It Ends with Us",
-      "November 9",
-      "Ugly Love",
       "The Seven Husbands of Evelyn Hugo",
       "Daisy Jones and The Six",
-      "Carrie Soto Is Back",
-      "Hell Bent",
-      "The Candy House",
-      "Trust",
-      "Sea of Tranquility",
-      "The Locked Door",
-      "The It Girl",
-      "The Match",
-      "Reminders of Him",
-      // 2023 Bestsellers
-      "Happy Place",
-      "Intermezzo",
+      "The Housemaid",
+      "A Court of Thorns and Roses",
+      "A Court of Mist and Fury",
+      "From Blood and Ash",
+      "The Atlas Six",
+      "Onyx Storm",
+      "Funny Story",
+      "Starter Villain",
       "James",
       "The Women",
-      "Orbital",
+      "Intermezzo",
       "The God of the Woods",
+      "Sunrise on the Reaping",
       "All Fours",
       "The Life Impossible",
       "The Covenant of Water",
       "Hello Beautiful",
       "Yellowface",
-      "Happy Hours",
       "The Familiar",
-      "The Housemaid",
-      "The Housemaid's Secret",
-      "The Teacher",
-      "The Coworker",
-      "A Court of Thorns and Roses",
-      "A Court of Mist and Fury",
-      "A Court of Wings and Ruin",
-      "From Blood and Ash",
-      "A Shadow in the Ember",
-      "The Bridge Kingdom",
-      "House of Salt and Sorrows",
-      "Kingdom of the Wicked",
-      "The Atlas Six",
-      "These Hollow Vows",
-      // 2024 Bestsellers
-      "Sunrise on the Reaping",
+
+      // 2025-2026
+      "The Let Them Theory",
       "Atmosphere",
       "Great Big Beautiful Life",
-      "The Women",
-      "James by Percival Everett",
-      "All Fours",
-      "The Life Impossible",
-      "Intermezzo",
-      "The God of the Woods",
-      "Eruption",
       "The Boyfriend",
       "The Waiting",
-      "In Too Deep",
-      "The Grey Wolf",
       "Wind and Truth",
-      "Onyx Storm",
-      "Funny Story",
-      "Glacier",
-      "The Lost Story",
       "The Pairing",
-      "Only If You're Lucky",
-      "The Fragile Threads of Power",
-      "The Hurricane Wars",
-      "Starter Villain",
-      "Some Desperate Glory",
-      "The Adventures of Amina al-Sirafi",
-      // Nonfiction popular
-      "Spare",
-      "The Light We Carry",
-      "I'm Glad My Mom Died",
-      "Born a Crime",
-      "Know My Name",
-      "Just as I Am",
-      "Will",
-      "Greenlights",
+      "The Lost Story",
+      "Glacier",
+
+      // Popular nonfiction
+      "Sapiens",
+      "Homo Deus",
+      "21 Lessons for the 21st Century",
+      "A Brief History of Time",
+      "Freakonomics",
+      "The Tipping Point",
+      "Blink",
+      "Outliers",
+      "David and Goliath",
+      "Talking to Strangers",
+      "The Bomber Mafia",
       "The Body Keeps the Score",
       "Maybe You Should Talk to Someone",
       "Why Fish Don't Exist",
       "Hidden Potential",
-      "Slow Productivity",
       "Same as Ever",
-      "Build",
-      "Never Finished",
-      "Burn Book",
       "The Wager",
       "Say Nothing",
       "Empire of Pain",
       "Devil in the White City",
       "Killers of the Flower Moon",
       "The Immortal Life of Henrietta Lacks",
-      "Between the World and Me"
+      "Born a Crime",
+      "I'm Glad My Mom Died",
+      "Will",
+      "Greenlights",
+      "The Light We Carry",
+      "Rich Dad Poor Dad",
+      "The 7 Habits of Highly Effective People",
+      "How to Win Friends and Influence People",
+      "Think and Grow Rich",
+      "Man's Search for Meaning",
+      "Quiet: The Power of Introverts",
+      "Daring Greatly",
+      "The Four Agreements",
+      "Atomic Habits",
+      "Good to Great",
+      "Zero to One",
+      "The Lean Startup",
+      "Shoe Dog",
+      "Bad Blood",
+      "Hillbilly Elegy",
+      "The Glass Castle",
+      "Educated",
+      "Know My Name",
+      "Just as I Am",
+      "I'm Glad My Mom Died",
+      "Spare",
+      "Unbroken"
     ];
 
     let bookSuggestionIndex = 0;
@@ -1358,7 +1591,9 @@
     async function loadBookSuggestions() {
       const container = document.getElementById("bookSuggestions");
       container.innerHTML =
-        `<p style="color:#666; font-size:13px;">Loading suggestions...</p>`;
+        `<p style="color:#666; font-size:13px;">
+          Loading suggestions...
+        </p>`;
 
       await loadRatedIds();
 
@@ -1377,66 +1612,94 @@
         return;
       }
 
-      // Shuffle and pick 6
       const shuffled = unratedBooks
         .sort(() => Math.random() - 0.5)
         .slice(0, 6);
 
-      let html = "";
-
+      // Fetch book data including covers from Google Books
+      const bookData = [];
       for (const title of shuffled) {
         const res = await fetch(
           `https://www.googleapis.com/books/v1/volumes?q=intitle:${encodeURIComponent(title)}&maxResults=1&key=${CONFIG.BOOKS_KEY}`
         );
         const data = await res.json();
-
         if (!data.items || data.items.length === 0) continue;
 
         const info = data.items[0].volumeInfo;
         const author = info.authors ? info.authors[0] : "Unknown Author";
         const year = info.publishedDate
           ? info.publishedDate.substring(0, 4) : "N/A";
+        const coverUrl = info.imageLinks
+          ? info.imageLinks.thumbnail || info.imageLinks.smallThumbnail
+          : null;
         const normalizedId = `${title}-${author}`
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, "-")
           .replace(/^-|-$/g, "");
 
+        bookData.push({
+          title, author, year, coverUrl, normalizedId
+        });
+      }
+
+      let html = `
+        <div class="suggestions-container">
+          <div class="suggestions-header">
+            <span>Popular Books</span>
+            <button class="suggestions-close"
+              id="closeBookSuggestions">&#x2715;</button>
+          </div>
+          <div class="suggestions-grid">`;
+
+      bookData.forEach(book => {
+        const imageHtml = book.coverUrl
+          ? `<img src="${book.coverUrl}" alt="${book.title}" 
+               loading="lazy">`
+          : `<div class="no-cover">${book.title}</div>`;
+
         html += `
-          <div class="suggestion-card" id="suggest-${normalizedId}">
-            <div class="suggestion-info">
-              <div class="suggestion-title">${title}</div>
-              <div class="suggestion-sub">${author} (${year})</div>
-            </div>
+          <div class="suggestion-card" 
+            id="suggest-${book.normalizedId}">
+            ${imageHtml}
+            <div class="suggestion-title">${book.title}</div>
+            <div class="suggestion-sub">${book.author}</div>
             <div class="suggestion-rating">
               <input type="number" min="1" max="10"
                 placeholder="1-10"
-                id="suggest-input-${normalizedId}">
+                id="suggest-input-${book.normalizedId}">
               <button class="suggestion-rate-btn"
-                data-id="${normalizedId}"
-                data-title="${title.replace(/"/g, '&quot;')}"
-                data-author="${author.replace(/"/g, '&quot;')}"
-                data-year="${year}"
+                data-id="${book.normalizedId}"
+                data-title="${book.title.replace(/"/g, '&quot;')}"
+                data-author="${book.author.replace(/"/g, '&quot;')}"
+                data-year="${book.year}"
                 data-type="book">
                 Rate
               </button>
             </div>
           </div>`;
-      }
+      });
 
       html += `
-        <div class="suggestions-footer">
-          <button id="loadMoreBooksBtn">
-            Show me different ones
-          </button>
+          </div>
+          <div class="suggestions-footer">
+            <button id="loadMoreBooksBtn">
+              Show me different ones
+            </button>
+          </div>
         </div>`;
+
       container.innerHTML = html;
+
+      document.getElementById("closeBookSuggestions")
+        .addEventListener("click", () => {
+          container.innerHTML = "";
+        });
 
       document.getElementById("loadMoreBooksBtn")
         .addEventListener("click", () => {
           loadBookSuggestions();
         });
 
-      // Handle rate button clicks
       container.querySelectorAll(".suggestion-rate-btn")
         .forEach(btn => {
           btn.addEventListener("click", async () => {
