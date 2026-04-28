@@ -470,6 +470,43 @@
     .suggestions-footer button:hover {
       background: #f0f0f0;
     }
+    .delete-btn {
+      padding: 3px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      background: white;
+      border: 1px solid #ffcdd2;
+      border-radius: 4px;
+      margin-left: 4px;
+      color: #e53935;
+    }
+    .delete-btn:hover {
+      background: #ffebee;
+    }
+    .confirm-delete {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-left: 4px;
+    }
+    .confirm-yes {
+      padding: 3px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      background: #e53935;
+      color: white;
+      border: none;
+      border-radius: 4px;
+    }
+    .confirm-no {
+      padding: 3px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      background: white;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      color: #666;
+    }
   </style>
 </head>
 <body>
@@ -664,8 +701,9 @@
   <script type="module">
     import { initializeApp }
       from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-   import { getFirestore, collection, addDoc, query,
-             where, getDocs, writeBatch, doc, updateDoc, setDoc }
+    import { getFirestore, collection, addDoc, query,
+             where, getDocs, writeBatch, doc, updateDoc, setDoc,
+             deleteDoc }
       from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
     import { getAuth, GoogleAuthProvider, signInWithPopup,
              createUserWithEmailAndPassword,
@@ -986,6 +1024,10 @@
                 </span>
                 <button class="edit-btn" data-doc="${item.docId}" 
                   data-rating="${item.rating}">Edit</button>
+                <button class="delete-btn" data-doc="${item.docId}"
+                  data-title="${item.title.replace(/"/g, '&quot;')}">
+                  Remove
+                </button>
               </div>`;
           });
         }
@@ -1004,6 +1046,10 @@
                 </span>
                 <button class="edit-btn" data-doc="${item.docId}" 
                   data-rating="${item.rating}">Edit</button>
+                <button class="delete-btn" data-doc="${item.docId}"
+                  data-title="${item.title.replace(/"/g, '&quot;')}">
+                  Remove
+                </button>
               </div>`;
           });
         }
@@ -1090,6 +1136,57 @@
           editBtn.textContent = "Edit";
           itemDiv.appendChild(editBtn);
         }
+        // Handle Remove button click — show confirmation
+        if (e.target.classList.contains("delete-btn")) {
+          const docId = e.target.dataset.doc;
+          const title = e.target.dataset.title;
+          const itemDiv = document.getElementById(`item-${docId}`);
+
+          // Replace remove button with confirmation
+          e.target.outerHTML = `
+            <div class="confirm-delete" id="confirm-${docId}">
+              <span style="font-size:12px; color:#666;">
+                Remove "${title}"?
+              </span>
+              <button class="confirm-yes" data-doc="${docId}">
+                Yes
+              </button>
+              <button class="confirm-no" data-doc="${docId}">
+                No
+              </button>
+            </div>`;
+        }
+
+        // Handle confirmation Yes
+        if (e.target.classList.contains("confirm-yes")) {
+          const docId = e.target.dataset.doc;
+          try {
+            await deleteDoc(doc(db, "ratings", docId));
+            const itemDiv = document.getElementById(`item-${docId}`);
+            itemDiv.remove();
+            document.getElementById("status").textContent =
+              "Rating removed successfully.";
+          } catch (err) {
+            console.error("Error deleting rating:", err);
+            document.getElementById("status").textContent =
+              "Error removing rating. Please try again.";
+          }
+        }
+
+        // Handle confirmation No — restore remove button
+        if (e.target.classList.contains("confirm-no")) {
+          const docId = e.target.dataset.doc;
+          const confirmDiv = document.getElementById(`confirm-${docId}`);
+          const itemDiv = document.getElementById(`item-${docId}`);
+          const titleEl = itemDiv.querySelector(".item-title");
+          const title = titleEl.textContent.trim().split("(")[0].trim();
+
+          confirmDiv.outerHTML = `
+            <button class="delete-btn" data-doc="${docId}"
+              data-title="${title}">
+              Remove
+            </button>`;
+        }
       });
 
       // --- MOVIE SUGGESTIONS ---
@@ -1120,13 +1217,26 @@
 
       await loadRatedIds();
 
-      const res = await fetch(
-        `https://api.themoviedb.org/3/movie/popular?api_key=${TMDB_KEY}&page=${page}`
-      );
-      const data = await res.json();
+      // Fetch two pages and combine for a larger pool
+      const [res1, res2] = await Promise.all([
+        fetch(`https://api.themoviedb.org/3/movie/popular?api_key=${TMDB_KEY}&page=${page}&include_adult=false&language=en-US&region=US`),
+        fetch(`https://api.themoviedb.org/3/movie/popular?api_key=${TMDB_KEY}&page=${page + 1}&include_adult=false&language=en-US&region=US`)
+      ]);
+      const [data1, data2] = await Promise.all([
+        res1.json(), res2.json()
+      ]);
 
-      const unrated = data.results
+      const seen = new Set();
+      const combined = [...data1.results, ...data2.results]
+        .filter(movie => {
+          if (seen.has(movie.id)) return false;
+          seen.add(movie.id);
+          return true;
+        });
+
+      const unrated = combined
         .filter(movie => !ratedMovieIds.has(String(movie.id)))
+        .filter(movie => movie.vote_count > 1000)
         .sort(() => Math.random() - 0.5);
 
       if (unrated.length === 0) {
